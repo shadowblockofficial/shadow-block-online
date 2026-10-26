@@ -1,0 +1,13 @@
+
+{
+  "name": "shadow-block-online",
+  "version": "1.0.0",
+  "description": "SHADOW BLOCK online room server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
