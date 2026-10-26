@@ -10,35 +10,27 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 const rooms = new Map();
 
+function send(ws, data) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
+
 function makeCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code;
   do {
-    code = Array.from({ length: 6 }, () =>
-      chars[Math.floor(Math.random() * chars.length)]
-    ).join("");
+    code = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
   } while (rooms.has(code));
   return code;
-}
-
-function send(ws, data) {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(data));
-  }
 }
 
 function leave(ws) {
   const code = ws.roomCode;
   if (!code) return;
-
   const room = rooms.get(code);
   ws.roomCode = null;
   if (!room) return;
-
   room.delete(ws);
-  for (const client of room) {
-    send(client, { type: "peer_left" });
-  }
+  for (const client of room) send(client, { type: "opponent_left" });
   if (room.size === 0) rooms.delete(code);
 }
 
@@ -48,44 +40,42 @@ wss.on("connection", (ws) => {
     try {
       msg = JSON.parse(raw.toString());
     } catch {
-      return send(ws, { type: "error", message: "Invalid JSON" });
+      return send(ws, { type: "error", message: "Geçersiz mesaj." });
     }
 
-    if (msg.type === "create_room") {
+    const action = msg.action || msg.type;
+
+    if (action === "create_room") {
       leave(ws);
       const code = makeCode();
-      const room = new Set([ws]);
-      rooms.set(code, room);
+      rooms.set(code, new Set([ws]));
       ws.roomCode = code;
-      return send(ws, { type: "room_created", code });
+      ws.seat = "blue";
+      return send(ws, { type: "room_created", code, seat: ws.seat });
     }
 
-    if (msg.type === "join_room") {
+    if (action === "join_room") {
       const code = String(msg.code || "").trim().toUpperCase();
       const room = rooms.get(code);
-
-      if (!room) {
-        return send(ws, { type: "error", message: "Room not found" });
-      }
-      if (room.size >= 2) {
-        return send(ws, { type: "error", message: "Room is full" });
-      }
+      if (!room) return send(ws, { type: "error", message: "Oda bulunamadı." });
+      if (room.size >= 2) return send(ws, { type: "error", message: "Oda dolu." });
 
       leave(ws);
       room.add(ws);
       ws.roomCode = code;
-      send(ws, { type: "room_joined", code });
+      ws.seat = "purple";
+      send(ws, { type: "room_joined", code, seat: ws.seat });
       for (const client of room) {
-        if (client !== ws) send(client, { type: "peer_joined" });
+        if (client !== ws) send(client, { type: "player_joined" });
       }
       return;
     }
 
-    if (msg.type === "relay") {
+    if (action === "state") {
       const room = rooms.get(ws.roomCode);
       if (!room) return;
       for (const client of room) {
-        if (client !== ws) send(client, { type: "relay", data: msg.data });
+        if (client !== ws) send(client, { type: "state", data: msg.data || {} });
       }
     }
   });
